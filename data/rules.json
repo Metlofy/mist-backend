@@ -702,5 +702,82 @@
     "enabled": true,
     "system": true,
     "createdAt": "2026-10-21T20:41:58.613Z"
+  },
+  {
+    "id": "e98df8b1-36b1-419a-9e12-3023e9a71011",
+    "type": "warning",
+    "match": "eventlog_cleared",
+    "name": "Olay Günlükleri Sıfırlandı (Cleaner)",
+    "note": "İnceleme öncesi Event Viewer / Güvenlik günlükleri temizlenmiş.",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-04T20:50:00.000Z"
+  },
+  {
+    "id": "c874ea90-2121-4fca-9821-482937be1992",
+    "type": "warning",
+    "match": "eventlog_service_disabled",
+    "name": "EventLog Servisi Kapatıldı",
+    "note": "Windows Olay Günlüğü servisi delil karartmak amacıyla devre dışı bırakılmış.",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-04T20:50:00.000Z"
+  },
+  {
+    "id": "f512da34-9041-4cfa-8123-904128491024",
+    "type": "warning",
+    "match": "cleaner_command_executed",
+    "name": "İz Silme Komutu Çalıştırıldı",
+    "note": "Çalıştır (Run) geçmişinde USN Journal veya EventLog silme komutları (fsutil/wevtutil) tespit edildi.",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-04T20:50:00.000Z"
+  },
+  {
+    "id": "d1092834-0192-4f81-a901-817293819284",
+    "type": "warning",
+    "match": "prefetch_suspiciously_wiped",
+    "name": "Prefetch Klasörü Temizlendi",
+    "note": "C:\\Windows\\Prefetch klasörü delil yok etmek için boşaltılmış veya sıfırlanmış.",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-04T20:50:00.000Z"
+  },
+  {
+    "id": "b7162534-1928-4821-b891-289172648172",
+    "type": "filename",
+    "match": "eulen.cc",
+    "name": "Eulen Network / DNS",
+    "note": "DNS veya aktif ağ bağlantılarında Eulen sunucusu tespit edildi.",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-04T20:50:00.000Z"
+  },
+  {
+    "id": "a9182736-4918-4726-b819-192837461928",
+    "type": "filename",
+    "match": "redengine.eu",
+    "name": "RedEngine Network / DNS",
+    "note": "DNS veya aktif ağ bağlantılarında RedEngine sunucusu tespit edildi.",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-04T20:50:00.000Z"
+  },
+  {
+    "id": "cb192837-1928-4819-a829-192837461029",
+    "type": "filename",
+    "match": "skript.gg",
+    "name": "Skript.gg Network / DNS",
+    "note": "DNS veya aktif ağ bağlantılarında Skript.gg hile servisi tespit edildi.",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-04T20:50:00.000Z"
   }
 ]
