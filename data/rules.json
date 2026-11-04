@@ -779,5 +779,192 @@
     "enabled": true,
     "system": true,
     "createdAt": "2026-11-04T20:50:00.000Z"
+  },
+  {
+    "id": "rbx-01",
+    "type": "filename",
+    "match": "solara",
+    "name": "Solara Executor",
+    "note": "Roblox Seviye 3/8 Solara Script Executor",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
+  },
+  {
+    "id": "rbx-02",
+    "type": "filename",
+    "match": "wave",
+    "name": "Wave Executor",
+    "note": "Roblox Wave / Wave Lite Executor",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
+  },
+  {
+    "id": "rbx-03",
+    "type": "filename",
+    "match": "delta",
+    "name": "Delta Executor",
+    "note": "Roblox Delta Windows/Android Executor",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
+  },
+  {
+    "id": "rbx-04",
+    "type": "filename",
+    "match": "fluxus",
+    "name": "Fluxus Executor",
+    "note": "Roblox Fluxus Level 7 Executor",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
+  },
+  {
+    "id": "rbx-05",
+    "type": "filename",
+    "match": "celery",
+    "name": "Celery Executor",
+    "note": "Roblox Celery v2/v3 Script Executor",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
+  },
+  {
+    "id": "rbx-06",
+    "type": "filename",
+    "match": "krnl",
+    "name": "Krnl Executor",
+    "note": "Roblox KRNL Executor",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
+  },
+  {
+    "id": "rbx-07",
+    "type": "filename",
+    "match": "krampus",
+    "name": "Krampus / Ro-Exec",
+    "note": "Roblox Krampus Ro-Exec Loader",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
+  },
+  {
+    "id": "rbx-08",
+    "type": "filename",
+    "match": "hydrogen",
+    "name": "Hydrogen Executor",
+    "note": "Roblox Hydrogen Executor",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
+  },
+  {
+    "id": "rbx-09",
+    "type": "filename",
+    "match": "synapse",
+    "name": "Synapse X",
+    "note": "Roblox Synapse X Executor",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
+  },
+  {
+    "id": "rbx-10",
+    "type": "filename",
+    "match": "scriptware",
+    "name": "Script-Ware",
+    "note": "Roblox Script-Ware Executor",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
+  },
+  {
+    "id": "rbx-11",
+    "type": "filename",
+    "match": "xeno",
+    "name": "Xeno Executor",
+    "note": "Roblox Xeno Executor",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
+  },
+  {
+    "id": "rbx-12",
+    "type": "filename",
+    "match": "nihon",
+    "name": "Nihon Executor",
+    "note": "Roblox Nihon Executor",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
+  },
+  {
+    "id": "rbx-13",
+    "type": "filename",
+    "match": "valyse",
+    "name": "Valyse Executor",
+    "note": "Roblox Valyse Executor",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
+  },
+  {
+    "id": "rbx-14",
+    "type": "filename",
+    "match": "arceus",
+    "name": "Arceus X",
+    "note": "Roblox Arceus X Executor",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
+  },
+  {
+    "id": "rbx-15",
+    "type": "filename",
+    "match": "codex",
+    "name": "Codex Executor",
+    "note": "Roblox Codex Executor",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
+  },
+  {
+    "id": "rbx-16",
+    "type": "filename",
+    "match": "getgenv",
+    "name": "Roblox Exploit Lua Environment",
+    "note": "Roblox exploit getgenv() global fonksiyon çağrısı",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
+  },
+  {
+    "id": "rbx-17",
+    "type": "filename",
+    "match": "hookmetamethod",
+    "name": "Roblox Metamethod Hook",
+    "note": "Roblox exploit hookmetamethod() çağrısı",
+    "severity": "high",
+    "enabled": true,
+    "system": true,
+    "createdAt": "2026-11-05T00:50:00.000Z"
   }
 ]
