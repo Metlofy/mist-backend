@@ -3,6 +3,7 @@
 
 import express from "express";
 import cors from "cors";
+import QRCode from "qrcode";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -284,10 +285,44 @@ async function requireActiveKey(req, res, next) {
   next();
 }
 
+// Kullanılmış nonce'ları takip et (replay attack önlemi). 5 dakikada bir temizlenir.
+const usedNonces = new Map(); // nonce -> expiresAt (ms)
+setInterval(() => {
+  const now = Date.now();
+  for (const [n, exp] of usedNonces) if (now > exp) usedNonces.delete(n);
+}, 5 * 60 * 1000).unref();
+
 function requireClientSecret(req, res, next) {
-  const secret = req.header('x-client-secret');
-  if (secret !== CLIENT_SECRET) return res.status(401).json({ error: 'unauthorized' });
-  next();
+  const nonce = req.header('x-client-nonce');
+  const tsStr = req.header('x-client-ts');
+  const sig   = req.header('x-client-sig');
+  const plainSecret = req.header('x-client-secret');
+
+  // --- Yeni HMAC yöntemi ---
+  if (nonce && tsStr && sig) {
+    const ts = parseInt(tsStr, 10);
+    const nowSec = Math.floor(Date.now() / 1000);
+    // 90 saniyelik zaman penceresi
+    if (Math.abs(nowSec - ts) > 90) return res.status(401).json({ error: 'request timestamp out of window' });
+    // Replay koruması
+    if (usedNonces.has(nonce)) return res.status(401).json({ error: 'nonce already used' });
+    // İmzayı doğrula: HMAC-SHA256(key=CLIENT_SECRET, msg=nonce:ts)
+    const expected = crypto.createHmac('sha256', CLIENT_SECRET)
+      .update(`${nonce}:${tsStr}`)
+      .digest('hex');
+    // Timing-safe comparison
+    if (expected.length !== sig.length) return res.status(401).json({ error: 'unauthorized' });
+    let diff = 0;
+    for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
+    if (diff !== 0) return res.status(401).json({ error: 'unauthorized' });
+    // Nonce'u kullanıldı olarak işaretle (90 saniye + buffer)
+    usedNonces.set(nonce, Date.now() + 120_000);
+    return next();
+  }
+
+  // --- Geriye dönük uyumluluk: düz secret ---
+  if (plainSecret === CLIENT_SECRET) return next();
+  return res.status(401).json({ error: 'unauthorized' });
 }
 
 // ---- Discord OAuth -------------------------------------------------------
@@ -542,7 +577,20 @@ app.post('/api/scan', scanLimiter, requireClientSecret, scanJson, async (req, re
   if (!sessionCode) return res.status(400).json({ error: 'missing sessionCode' });
 
   const session = await getSession(sessionCode);
-  if (!isSessionUsable(session)) return res.status(403).json({ error: 'invalid or expired session code' });
+  if (!isSessionUsable(session)) {
+    // The first report may have been saved even if its response was lost.
+    // Return the saved result for a retry from the same machine instead of
+    // rejecting the retry as an already-used PIN.
+    const previous = await getScan(sessionCode);
+    if (previous && previous.machineId === machineId) {
+      return res.json({
+        pin: previous.pin || sessionCode,
+        verdict: previous.verdict || 'pending',
+        detectionCount: previous.detections?.length || 0,
+      });
+    }
+    return res.status(403).json({ error: 'invalid or expired session code' });
+  }
 
   try {
     const rules = await getRules();
@@ -770,9 +818,15 @@ app.post('/api/sessions', apiLimiter, requireAuth, async (req, res) => {
     status: 'pending',
     progress: null,
   };
+  const qrDataUrl = await QRCode.toDataURL(code, {
+    errorCorrectionLevel: "M",
+    margin: 2,
+    width: 240,
+    color: { dark: "#07130E", light: "#FFFFFF" },
+  });
   await createSession(session);
   await appendAudit({ action: 'session_created', pin: code, game: session.game, by: req.user.discordUsername });
-  res.status(201).json({ ...session, downloadUrl: `${BACKEND_URL}/api/download/${downloadToken}` });
+  res.status(201).json({ ...session, qrDataUrl, downloadUrl: `${BACKEND_URL}/api/download/${downloadToken}` });
 });
 
 
@@ -798,7 +852,20 @@ app.get('/api/user/usage', apiLimiter, requireAuth, async (req, res) => {
 
 app.get('/api/sessions', apiLimiter, requireAuth, async (req, res) => {
   const all = await listSessions();
-  const filtered = all.filter(s => s.creatorDiscordId === req.user.discordId);
+  const now = Date.now();
+  // Süresi dolmuş (15 dk) veya 30 dakikadan eski takılı kalmış hayalet oturumları temizle
+  const valid = [];
+  for (const s of all) {
+    const exp = s.expiresAt ? new Date(s.expiresAt).getTime() : 0;
+    const created = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+    const isStale = (exp && now > exp) || (s.startedAt && now - new Date(s.startedAt).getTime() > 30 * 60 * 1000) || (created && now - created > 24 * 60 * 60 * 1000);
+    if (isStale && !s.usedAt) {
+      await deleteSession(s.code).catch(() => {});
+    } else {
+      valid.push(s);
+    }
+  }
+  const filtered = valid.filter(s => s.creatorDiscordId === req.user.discordId);
   res.json(filtered);
 });
 

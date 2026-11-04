@@ -13,6 +13,8 @@ function collectArtifactNames(report) {
   for (const r of report.memoryRegions ?? []) if (r.strings_found) names.push(r.strings_found);
   for (const k of report.runKeys ?? []) names.push(k.name, k.command, k.hive);
   for (const d of report.deletedFiles ?? []) names.push(d.originalPath ?? d.path);
+  for (const u of report.userAssist ?? []) names.push(u.path);
+  for (const s of report.services ?? []) names.push(s.name, s.displayName, s.binaryPath);
   for (const n of report.networkConnections ?? []) names.push(n.remoteAddress, n.processName);
   for (const d of report.dnsCache ?? []) names.push(d.entryName);
   for (const f of report.suspiciousFiles ?? []) names.push(f);
@@ -151,6 +153,31 @@ function getBasename(path) {
   return path.split(/[\\/]/).pop();
 }
 
+function evidenceSource(report, value, type) {
+  if (type === "hash") return "sha1";
+  if (type === "warning") return "client_warning";
+  const hit = String(value ?? "").toLowerCase();
+  const has = (items, fields) => (items ?? []).some((item) => fields.some((field) => String(item?.[field] ?? "").toLowerCase() === hit));
+  const checks = [
+    ["processes", report.processes, ["name", "path", "windowTitle"]], ["prefetch", report.prefetch, ["fileName"]],
+    ["bam", report.bam, ["path"]], ["eventLog", report.eventLog, ["summary", "taskName"]],
+    ["shimCache", report.shimCache, ["path"]], ["amcache", report.amcache, ["path"]], ["rpf", report.rpf, ["path"]],
+    ["modules", report.modules, ["moduleName", "path", "ownerProcess"]], ["memory", report.memoryRegions, ["strings_found"]],
+    ["runKeys", report.runKeys, ["name", "command", "hive"]], ["deletedFiles", report.deletedFiles, ["originalPath", "path"]],
+    ["userAssist", report.userAssist, ["path"]], ["services", report.services, ["name", "displayName", "binaryPath"]],
+    ["network", report.networkConnections, ["remoteAddress", "processName"]], ["dns", report.dnsCache, ["entryName"]],
+  ];
+  for (const [source, items, fields] of checks) if (has(items, fields)) return source;
+  if ((report.suspiciousFiles ?? []).some((x) => String(x).toLowerCase() === hit)) return "suspiciousFiles";
+  if ((report.browserHits ?? []).some((x) => String(x).toLowerCase() === hit)) return "browserHits";
+  if (report.fivemDeep) {
+    if (has(report.fivemDeep.suspiciousLogHits, ["content", "pattern"])) return "fivemLogs";
+    if (has(report.fivemDeep.crashDumps, ["fileName"])) return "crashDumps";
+    if (has(report.fivemDeep.pluginAndModFiles, ["fileName", "relativePath"])) return "fivemFiles";
+  }
+  return "unknown";
+}
+
 export function runDetectionsDetailed(report, rules) {
   const detections = [];
   const { names, whitelisted } = applyWhitelist(collectArtifactNames(report), collectHashByName(report), collectFullPathByName(report), rules);
@@ -176,7 +203,7 @@ export function runDetectionsDetailed(report, rules) {
       });
       
       if (hit) {
-        detections.push({ ruleId: rule.id, type: rule.type, name: rule.name, severity: rule.severity, evidence: hit, note: rule.note });
+        detections.push({ ruleId: rule.id, type: rule.type, name: rule.name, severity: rule.severity, evidence: hit, source: evidenceSource(report, hit, rule.type), note: rule.note });
       }
     }
 
@@ -184,7 +211,7 @@ export function runDetectionsDetailed(report, rules) {
       const re = compileRegex(rule.match);
       const hit = re ? names.find((n) => re.test(n)) : null;
       if (hit) {
-        detections.push({ ruleId: rule.id, type: rule.type, name: rule.name, severity: rule.severity, evidence: hit, note: rule.note });
+        detections.push({ ruleId: rule.id, type: rule.type, name: rule.name, severity: rule.severity, evidence: hit, source: evidenceSource(report, hit, rule.type), note: rule.note });
       }
     }
 
@@ -196,19 +223,19 @@ export function runDetectionsDetailed(report, rules) {
          return Math.abs(base.length - needle.length) <= threshold && levenshtein(base, needle) <= threshold;
       });
       if (hit) {
-        detections.push({ ruleId: rule.id, type: rule.type, name: rule.name, severity: rule.severity, evidence: hit, note: rule.note });
+        detections.push({ ruleId: rule.id, type: rule.type, name: rule.name, severity: rule.severity, evidence: hit, source: evidenceSource(report, hit, rule.type), note: rule.note });
       }
     }
 
     if (rule.type === "hash") {
       const needle = rule.match.toLowerCase().trim();
       if (hashes.includes(needle)) {
-        detections.push({ ruleId: rule.id, type: rule.type, name: rule.name, severity: rule.severity, evidence: needle, note: rule.note });
+        detections.push({ ruleId: rule.id, type: rule.type, name: rule.name, severity: rule.severity, evidence: needle, source: "sha1", note: rule.note });
       }
     }
 
     if (rule.type === "warning" && warningCodes.has(rule.match)) {
-      detections.push({ ruleId: rule.id, type: rule.type, name: rule.name, severity: rule.severity, evidence: rule.match, note: rule.note });
+      detections.push({ ruleId: rule.id, type: rule.type, name: rule.name, severity: rule.severity, evidence: rule.match, source: "client_warning", note: rule.note });
     }
   }
 
@@ -222,21 +249,18 @@ export function runDetections(report, rules) {
 
 // ---- Karar mantığı --------------------------------------------------------
 // Kanıt gücüne göre ağırlıklandırma:
-//   - GÜÇLÜ kanıt: "hash" (aynı ikili dosya) ve istemcinin ürettiği "warning" kodları.
-//     Tek başına "high" ise -> cheating.
-//   - ZAYIF kanıt: "filename" / "regex" / "fuzzy" (yeniden adlandırmayla atlatılır,
-//     meşru dosyalarla çakışabilir). Tek bir zayıf "high" eşleşmesi sadece
-//     "suspicious" üretir; "cheating" için en az WEAK_HIGH_FOR_CHEATING farklı
-//     kanıt (farklı dosya/yol) gerekir.
-const WEAK_HIGH_FOR_CHEATING = 2;
-const STRONG_TYPES = new Set(["hash", "warning"]);
+//   - Güçlü kanıt: tam SHA-1 eşleşmesi; tek başına yüksek önem derecesinde yeterlidir.
+//   - Dosya adı/regex/fuzzy ve warning eşleşmeleri tek başına kesin karar vermez;
+//     cheating için farklı kaynak ve farklı kanıt birlikte aranır.
 
 export function summarize(detections) {
   if (detections.length === 0) return "clean";
-
-  // Herhangi bir High risk kuralı (RedEngine, Eulen, Prefetch silme, EventLog silme vb.) direkt CHEATING'dir
-  if (detections.some((d) => d.severity === "high")) return "cheating";
-
-  // Medium veya low risk kurallar varsa Şüpheli
+  const high = detections.filter((d) => d.severity === "high");
+  if (high.some((d) => d.type === "hash")) return "cheating";
+  // Dosya adı/regex/fuzzy gibi eşleşmeler yalnızca farklı kaynak ve kanıtlarla birleşince karar oluşturur.
+  const corroborating = high.filter((d) => d.type !== "hash" && d.source && d.source !== "unknown");
+  const hasIndependentPair = corroborating.some((a, i) => corroborating.slice(i + 1).some((b) =>
+    a.source !== b.source && String(a.evidence).toLowerCase() !== String(b.evidence).toLowerCase()));
+  if (hasIndependentPair) return "cheating";
   return "suspicious";
 }
