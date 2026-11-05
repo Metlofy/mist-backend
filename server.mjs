@@ -958,6 +958,22 @@ app.get('/api/sessions/:code', apiLimiter, requireClientSecret, async (req, res)
   res.json({ valid: true, ok: true, game: session.game });
 });
 
+// PIN ile indirme — oyuncu siteye gelip PIN girer, geçerliyse download URL'sini alır.
+// Bu endpoint session'ı kullanmaz; sadece var mı ve süresi geçmemiş mi kontrol eder.
+app.post('/api/pin-download', makeRateLimiter(60 * 1000, 20), async (req, res) => {
+  const pin = String(req.body?.pin || '').trim();
+  if (!/^\d{6}$/.test(pin)) {
+    return res.status(400).json({ error: 'Geçersiz PIN formatı. 6 haneli sayısal kod giriniz.' });
+  }
+  const session = await getSession(pin);
+  if (!isSessionUsable(session)) {
+    return res.status(404).json({ error: 'Kod geçersiz, süresi dolmuş veya zaten kullanılmış. Yetkilinizden yeni bir kod alın.' });
+  }
+  // downloadToken ile indirme URL'sini döndür — session'ı kullanmıyoruz, sadece indirme linki veriyoruz
+  const downloadUrl = `${BACKEND_URL}/api/download/${session.downloadToken}`;
+  return res.json({ ok: true, downloadUrl, game: session.game || 'fivem' });
+});
+
 app.get('/api/download/:token', apiLimiter, async (req, res) => {
   // Link PIN'e değil, oturuma özel rastgele token'a bağlı.
   // Tarama tamamlanınca (usedAt) ya da süre dolunca link çalışmaz.
