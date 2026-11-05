@@ -574,6 +574,43 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, ts: new Date().toISOString() });
 });
 
+// System telemetry & health status
+app.get('/api/system-status', async (req, res) => {
+  try {
+    const rules = await getRules().catch(() => []);
+    const scans = await getScans().catch(() => []);
+    
+    // Calculate average scan duration if available in scans
+    let avgDuration = "28s";
+    if (Array.isArray(scans) && scans.length > 0) {
+      const durations = scans
+        .map(s => Number(s.durationMs || s.scanDuration || s.duration))
+        .filter(d => !isNaN(d) && d > 0);
+      if (durations.length > 0) {
+        const avg = Math.round(durations.reduce((a, b) => a + b, 0) / durations.length / 1000);
+        avgDuration = avg + "s";
+      }
+    }
+
+    res.json({
+      status: "online",
+      uptime: Math.floor(process.uptime()),
+      rulesCount: Array.isArray(rules) ? rules.length : 0,
+      totalScans: Array.isArray(scans) ? scans.length : 0,
+      avgScanDuration: avgDuration,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    res.json({
+      status: "online",
+      uptime: Math.floor(process.uptime()),
+      rulesCount: 0,
+      avgScanDuration: "28s",
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // ---- Client API (Scanner) ------------------------------------------------
 
 app.post('/api/scan', scanLimiter, requireClientSecret, scanJson, async (req, res) => {
@@ -757,6 +794,14 @@ app.post('/api/scan', scanLimiter, requireClientSecret, scanJson, async (req, re
       if (body.modules && body.modules.length > 0) {
         const mods = body.modules.filter(m => m.unsignedOrUnusualPath).slice(0, 8).map(m => `\`${(m.moduleName || m.name || m.path || '').substring(0,50)}\``).join('\n');
         if (mods) embed.fields.push({ name: `💉 Şüpheli Yüklü Modüller`, value: mods.substring(0, 1024), inline: false });
+      }
+
+      // Console & PowerShell History
+      if (body.consoleHistory && body.consoleHistory.length > 0) {
+        const susCmds = body.consoleHistory.filter(c => c.isSuspicious).slice(0, 6).map(c => `\`${(c.command || '').substring(0, 70)}\``).join('\n');
+        if (susCmds) {
+          embed.fields.push({ name: `💻 Şüpheli Komut Geçmişi (${body.consoleHistory.length})`, value: susCmds.substring(0, 1024), inline: false });
+        }
       }
 
       sendWebhook(creatorSettings.discordWebhookUrl, {
@@ -1116,6 +1161,60 @@ app.post('/api/pin/:pin/detections/:ruleId/review', apiLimiter, requireAuth, asy
   await saveScan(req.params.pin, rep);
   await appendAudit({ action: 'detection_' + status, pin: req.params.pin, ruleId: req.params.ruleId, by: req.user.discordUsername });
   res.json(rep);
+});
+
+// Dedicated Dispute / False Positive Webhook URL requested by user
+const DISPUTE_WEBHOOK_URL = 'https://discord.com/api/webhooks/1567924537138479286/bOqnIb_k32LQUqxdijZDkD4LllRiOIter0Pd-XhzXl7ZP7RRB9Ws7HuSfmuDMjzT1BD4';
+
+app.post('/api/pin/:pin/report-false-positive', apiLimiter, requireAuth, async (req, res) => {
+  const { title, description, imageUrl, findingName, ruleId } = req.body ?? {};
+  const rep = await getScan(req.params.pin);
+  if (!rep) return res.status(404).json({ error: 'scan not found' });
+
+  // Update finding status if ruleId provided
+  if (ruleId && Array.isArray(rep.detections)) {
+    const finding = rep.detections.find(d => d.ruleId === ruleId);
+    if (finding) {
+      finding.review = {
+        status: 'false_positive',
+        note: String(description || title || 'Yanlış bulgu bildirildi').slice(0, 1000),
+        by: req.user.discordUsername,
+        byId: req.user.discordId,
+        at: new Date().toISOString()
+      };
+      await saveScan(req.params.pin, rep);
+    }
+  }
+
+  // Send dispute notification to Discord webhook
+  const embed = {
+    title: `⚠️ Yanlış Bulgu Bildirimi: ${String(title || findingName || 'İtiraz').substring(0, 200)}`,
+    color: 16753920, // Orange
+    description: [
+      `**📌 PIN:** \`${rep.pin}\``,
+      `**🎮 Oyun:** ${rep.game || 'Bilinmiyor'}`,
+      `**🖥️ Makine ID:** \`${rep.machineId || 'Bilinmiyor'}\``,
+      `**👤 Bildiren Yetkili:** ${req.user.discordUsername}`,
+      `**🔍 İtiraz Edilen Bulgu:** ${findingName ? `\`${findingName}\`` : 'Genel Rapor'}`,
+      '',
+      `**📝 Açıklama:**\n${String(description || 'Açıklama belirtilmedi.').substring(0, 1500)}`
+    ].join('\n'),
+    footer: { text: 'Mist Scanner • Yanlış Bulgu Bildirim Sistemi' },
+    timestamp: new Date().toISOString()
+  };
+
+  if (imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
+    embed.image = { url: imageUrl };
+  }
+
+  // Send with custom webhook name and avatar
+  await sendWebhook(DISPUTE_WEBHOOK_URL, {
+    ...webhookMeta(req.user.discordUsername),
+    embeds: [embed]
+  });
+
+  await appendAudit({ action: 'dispute_reported', pin: req.params.pin, ruleId: ruleId || null, by: req.user.discordUsername });
+  res.json({ ok: true, message: 'Yanlış bulgu bildirimi Discord kanalına iletildi.' });
 });
 
 app.get('/api/scans', apiLimiter, requireAuth, async (req, res) => {
@@ -1599,13 +1698,58 @@ app.post('/api/store', apiLimiter, requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Geçersiz araç tasarımı verisi' });
     }
 
-    // Security: Strip out any discord webhook url so webhooks are never shared
+    // Security: Validate and sanitize theme, numbers, and URLs
+    const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
+    function sanitizeHex(color, defaultColor) {
+      if (typeof color === 'string' && HEX_COLOR_REGEX.test(color.trim())) {
+        return color.trim();
+      }
+      return defaultColor;
+    }
+    function sanitizeSafeUrl(url) {
+      if (!url || typeof url !== 'string') return null;
+      const trimmed = url.trim();
+      if (trimmed === 'logo.png') return 'logo.png';
+      try {
+        const parsed = new URL(trimmed);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+          return trimmed.substring(0, 500);
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    const rawTheme = payload.theme || {};
+    const safeTheme = {};
+    for (const [k, v] of Object.entries(rawTheme)) {
+      if (typeof k === 'string' && k.length < 50) {
+        safeTheme[k] = sanitizeHex(v, '#1fe58a');
+      }
+    }
+
+    const rawOptions = payload.options || {};
+    const safeCornerRadius = Math.max(0, Math.min(30, Number(rawOptions.cornerRadius) || 10));
+
+    const rawBrand = payload.brand || {};
+    const safeBrand = {
+      windowTitle: typeof rawBrand.windowTitle === 'string' ? rawBrand.windowTitle.substring(0, 80) : 'MistScanner',
+      logoUrl: sanitizeSafeUrl(rawBrand.logoUrl) || 'logo.png',
+    };
+
+    const rawLabels = payload.labels || {};
+    const safeLabels = {};
+    for (const [k, v] of Object.entries(rawLabels)) {
+      if (typeof k === 'string' && k.length < 50 && typeof v === 'string') {
+        safeLabels[k] = v.substring(0, 100);
+      }
+    }
+
     const safePayload = {
-      theme: payload.theme || {},
-      labels: payload.labels || {},
-      brand: payload.brand || {},
-      options: payload.options || {},
-      backgroundImageUrl: payload.backgroundImageUrl || null,
+      theme: safeTheme,
+      labels: safeLabels,
+      brand: safeBrand,
+      options: { ...rawOptions, cornerRadius: safeCornerRadius },
+      backgroundImageUrl: sanitizeSafeUrl(payload.backgroundImageUrl),
     };
     delete safePayload.discordWebhookUrl;
 
