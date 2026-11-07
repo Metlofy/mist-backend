@@ -509,6 +509,54 @@ app.post('/api/owner/keys/:code/revoke', requireAuth, requirePerm('keys.revoke')
   res.json(updated);
 });
 
+
+app.post('/api/owner/keys/:code/extend', requireAuth, requirePerm('keys.revoke'), async (req, res) => {
+  const { days } = req.body ?? {};
+  const addDays = parseInt(days, 10);
+  if (isNaN(addDays) || addDays <= 0) {
+    return res.status(400).json({ error: 'Geçersiz gün sayısı (pozitif bir tam sayı girilmelidir).' });
+  }
+
+  const key = await getLicenseKey(req.params.code);
+  if (!key) return res.status(404).json({ error: 'key not found' });
+  if (key.durationType === 'lifetime') {
+    return res.status(400).json({ error: 'Süresiz (Lifetime) key süresi uzatılamaz.' });
+  }
+
+  const now = new Date();
+  let baseDate = now;
+  if (key.expiresAt) {
+    const currExp = new Date(key.expiresAt);
+    if (!isNaN(currExp.getTime()) && currExp > now) {
+      baseDate = currExp;
+    }
+  }
+
+  const newExpiry = new Date(baseDate.getTime() + addDays * 86400 * 1000).toISOString();
+  let newStatus = key.status;
+  if (key.status === 'expired' && key.activatedBy) {
+    newStatus = 'active';
+  }
+
+  const updated = await updateLicenseKey(req.params.code, {
+    expiresAt: newExpiry,
+    status: newStatus
+  });
+
+  await appendAudit({
+    action: 'license_key_extended',
+    code: req.params.code,
+    label: key.label,
+    daysAdded: addDays,
+    newExpiresAt: newExpiry,
+    targetDiscordId: key.targetDiscordId,
+    activatedBy: key.activatedByUsername,
+    by: req.user.discordUsername
+  });
+
+  res.json(updated);
+});
+
 app.post('/api/owner/keys/:code/unrevoke', requireAuth, requirePerm('keys.revoke'), async (req, res) => {
   const key = await getLicenseKey(req.params.code);
   if (!key) return res.status(404).json({ error: 'key not found' });
