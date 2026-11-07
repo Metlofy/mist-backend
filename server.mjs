@@ -509,6 +509,35 @@ app.post('/api/owner/keys/:code/revoke', requireAuth, requirePerm('keys.revoke')
   res.json(updated);
 });
 
+app.post('/api/owner/keys/:code/unrevoke', requireAuth, requirePerm('keys.revoke'), async (req, res) => {
+  const key = await getLicenseKey(req.params.code);
+  if (!key) return res.status(404).json({ error: 'key not found' });
+  if (key.status !== 'revoked') return res.status(400).json({ error: 'key is not revoked' });
+
+  // Key daha önce etkinleştirilmiş mi ve süresi geçmiş mi kontrol et
+  let newStatus = 'active';
+  if (key.expiresAt !== null && new Date(key.expiresAt) < new Date()) {
+    newStatus = 'expired';
+  } else if (!key.activatedBy) {
+    newStatus = 'unused';
+  }
+
+  const updated = await updateLicenseKey(req.params.code, { 
+    status: newStatus, 
+    revokedAt: null, 
+    revokedBy: null 
+  });
+  await appendAudit({ 
+    action: 'license_key_reactivated', 
+    code: req.params.code, 
+    label: key.label, 
+    targetDiscordId: key.targetDiscordId, 
+    activatedBy: key.activatedByUsername,
+    by: req.user.discordUsername 
+  });
+  res.json(updated);
+});
+
 // ---- User: Key Activation -----------------------------------------------
 
 app.post('/api/keys/activate', requireAuth, async (req, res) => {
@@ -642,11 +671,26 @@ app.post('/api/scan', scanLimiter, requireClientSecret, scanJson, async (req, re
     // Sadece sistem kuralları + oturumu oluşturan personelin kendi kuralları çalışır
     // Regex kuralları ReDoS riski taşıdığı için sadece sistem veya owner kurallarına güvenilir
     const trustedForRegex = (r) => r.system || r.creatorDiscordId === OWNER_DISCORD_ID;
-    const applicable = rules.filter(r =>
-      r.enabled &&
-      (r.system || r.creatorDiscordId === session.creatorDiscordId) &&
-      (r.type !== 'regex' || trustedForRegex(r))
-    );
+
+    const scanGame = String(session.game || body.game || '').toLowerCase();
+    const isRoblox = scanGame.includes('roblox');
+    const isFiveM  = scanGame.includes('fivem') || scanGame.includes('gta');
+    const isCS     = scanGame.includes('cs') || scanGame.includes('counter');
+
+    const applicable = rules.filter(r => {
+      if (!r.enabled) return false;
+      if (!r.system && r.creatorDiscordId !== session.creatorDiscordId) return false;
+      if (r.type === 'regex' && !trustedForRegex(r)) return false;
+
+      // Oyun bazlı filtreleme: Seçilen oyuna ait olmayan kuralları çalıştırma
+      if (r.game && r.game !== 'all') {
+        const rg = r.game.toLowerCase();
+        if (isRoblox && rg !== 'roblox') return false;
+        if (isFiveM && rg !== 'fivem') return false;
+        if (isCS && rg !== 'cs2') return false;
+      }
+      return true;
+    });
     const { detections, whitelisted } = runDetectionsDetailed(body, applicable);
     const healthSources = Array.isArray(body.scanHealth?.sources) ? body.scanHealth.sources : [];
     const healthComplete = body.scanHealth?.overall === 'complete' && healthSources.length > 0 &&
